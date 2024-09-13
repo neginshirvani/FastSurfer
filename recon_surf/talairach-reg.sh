@@ -16,37 +16,40 @@
 
 # This script only runs the FreeSurfer talairach registration pipeline
 # The call signature is:
-usage="talairach-reg.sh <mri-directory> <3T atlas: true/false> <Logfile>"
+usage="talairach-reg.sh <mri-directory> <conformed image file> <norm name> <3T atlas> <long> <edits> <Logfile>"
 
-if [[ "$#" == "0" ]]
-then
-  echo "usage: $usage"
-  exit 0
-fi
+arguments=("mri-directory=dir" "conformed-image-file=file" "norm-name=file" "3T-atlas=true/false" "long=true/false"
+  "edits=true/false" "Logfile=file")
 
-if [[ "$#" != "3" ]]
+if [[ "$#" != "7" ]]
 then
-  echo "ERROR: Invalid number of arguments to talairach-reg.sh, must be '$usage'"
+  echo "ERROR: Invalid number of arguments to talairach-reg.sh, expected usage:"
+  echo "  $usage"
   exit 1
 fi
-if ! [[ -d "$1" ]]
-then
-  echo "ERROR: First argument must be the mri-directory: $usage"
-  exit 1
-fi
+
 mdir="$1"
-if [[ "$2" != "true" ]] && [[ "$2" != "false" ]]
-then
-  echo "ERROR: Second argument must be true or false: $usage"
-  exit 1
-fi
-atlas3T="$2"
-if ! [[ -f "$3" ]]
-then
-  echo "ERROR: Third argument must be the logfile (must already exist): $usage"
-  exit 1
-fi
-LF="$3"
+conformed_name="$2"
+norm_name="$3"
+atlas3T="$4"
+long="$5"
+edits="$6"
+LF="$7"
+
+i=1
+for arg_spec in "${arguments[@]}"
+do
+  arg=$(echo "$arg_spec" | cut -d"=" -f1)
+  type=$(echo "$arg_spec" | cut -d"=" -f1)
+  if [[ "$type" == "dir" ]] && [[ ! -d "$1" ]] || [[ "$type" == "file" ]] && [[ ! -f "$1" ]] ||
+    [[ "$type" == "true/false" ]] && [[ "$1" != "true" ]] && [[ "$1" != "false" ]]
+  then
+    echo "ERROR: Argument $i ($arg) must be a $type, expected usage:"
+    echo "  $usage"
+    exit 1
+  fi
+  shift
+done
 
 if [ -z "$FASTSURFER_HOME" ]
 then
@@ -65,25 +68,50 @@ mkdir -p $mdir/tmp
 
 pushd "$mdir" > /dev/null || ( echo "Could not change to $mdir!" | tee -a "$LF" && exit 1)
 
-# talairach.xfm: compute talairach full head (25sec)
-cmd=("talairach_avi" --i "$mdir/orig_nu.mgz" --xfm "$mdir/transforms/talairach.auto.xfm" "$atlas")
-if [[ "$atlas3T" == "true" ]]
+tal_file="$mdir/transforms/talairach"
+if [[ "$edits" == "true" ]] && [[ -f "$tal_file.xfm" ]] && { [[ ! -f "$tal_file.auto.xfm" ]] || \
+  [[ -f "$tal_file.auto.xfm" ]] && [[ "$(md5sum "$tal_file.xfm")" != "$(md5sum "$tal_file.auto.xfm")" ]] ; }
 then
-  echo "Using the 3T atlas for talairach registration."
-  cmd+=(--atlas "3T18yoSchwartzReactN32_as_orig")
-else
-  echo "Using the default atlas (1.5T) for talairach registration."
-fi
-if [[ ! -f /bin/tcsh ]] ; then
-  echo "ERROR: The talairach_avi script requires tcsh, but /bin/tcsh does not exist"
+  {
+    echo "INFO: Skipping talairach registration: mri/transforms/talairach.xfm exists, because edits is true"
+    echo "  and mri/transforms/talairach.auto.xfm does not exist or is different!"
+  } | tee -a "$LF"
+elif [[ "$edits" != "true" ]] && [[ -f "$tal_file.xfm" ]]
+then
+  {
+    echo "ERROR: Running talairach registration on top of an existing registration file, but edits is false."
+    echo "  Either delete  mri/transforms/talairach.xfm or add the --edits flag."
+  } | tee -a "$LF"
   exit 1
+else
+  if [[ "$edits" == "true" ]] && [[ -f "$tal_file.xfm" ]]
+  then
+    {
+      echo "WARNING: mri/transforms/talairach.xfm exists and edits is true, but we repeat the talairach"
+      echo "  because it seems it has not been modified (no change to mri/transforms/talairach.auto.xfm)."
+    } | tee -a "$LF"
+  fi
+  if [[ ! -f /bin/tcsh ]] ; then
+    echo "ERROR: The talairach_avi script requires tcsh, but /bin/tcsh does not exist"
+    exit 1
+  fi
+  # talairach.xfm: compute talairach full head (25sec)
+  cmd=("talairach_avi" --i "$mdir/orig_nu.mgz" --xfm "$mdir/transforms/talairach.auto.xfm" "$atlas")
+  if [[ "$atlas3T" == "true" ]]
+  then
+    echo "Using the 3T atlas for talairach registration."
+    cmd+=(--atlas "3T18yoSchwartzReactN32_as_orig")
+  else
+    echo "Using the default atlas (1.5T) for talairach registration."
+  fi
+  run_it "$LF" "${cmd[@]}"
+  # create copy
+  cmd=(cp "$mdir/transforms/talairach.auto.xfm $mdir/transforms/talairach.xfm")
+  run_it "$LF" "${cmd[@]}"
 fi
-run_it "$LF" "${cmd[@]}"
-# create copy
-cmd=(cp "$mdir/transforms/talairach.auto.xfm $mdir/transforms/talairach.xfm")
-run_it "$LF" "${cmd[@]}"
+
 # talairach.lta: convert to lta
-cmd=(lta_convert --src "$mdir/orig.mgz" --trg "$FREESURFER_HOME/average/mni305.cor.mgz"
+cmd=(lta_convert --src "$conformed_name" --trg "$FREESURFER_HOME/average/mni305.cor.mgz"
      --inxfm "$mdir/transforms/talairach.xfm" --outlta "$mdir/transforms/talairach.xfm.lta"
      --subject fsaverage --ltavox2vox)
 run_it "$LF" "${cmd[@]}"
@@ -105,9 +133,9 @@ popd > /dev/null || exit 1
 # Add xfm to nu
 # (use orig_nu, if nu.mgz does not exist already); by default, it should exist
 if [[ -e "$mdir/nu.mgz" ]]; then src_nu_file="$mdir/nu.mgz"
-else src_nu_file="$mdir/orig_nu.mgz"
+else src_nu_file="$norm_name"
 fi
-cmd=(mri_add_xform_to_header -c "$mdir/transforms/talairach.xfm" "$src_nu_file" "$mdir/nu.mgz")
+cmd=(mri_add_xform_to_header -c "$tal_file.xfm" "$src_nu_file" "$mdir/nu.mgz")
 run_it "$LF" "${cmd[@]}"
 
 popd > /dev/null || return

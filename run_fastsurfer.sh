@@ -57,6 +57,7 @@ norm_name_t2=""
 seg_log=""
 run_talairach_registration="false"
 atlas3T="false"
+edits="false"
 viewagg="auto"
 device="auto"
 batch_size="1"
@@ -134,6 +135,8 @@ FLAGS:
                             The voxel size (whether set manually or derived)
                             determines whether the surfaces are processed with
                             highres options (below 1mm) or not.
+  --edits                 Enables manual edits by replacing select intermediate/
+                            result files by manedit substitues (*.manedit.<ext>).
   --version <info>        Print version information and exit; <info> is optional.
                             <info> may be empty, just prints the version number,
                             +git_branch also prints the current branch, and any
@@ -163,7 +166,8 @@ SEGMENTATION PIPELINE:
                             \$SUBJECTS_DIR/\$sid/mri/orig_nu.mgz
   --tal_reg               Perform the talairach registration for eTIV estimates
                             in --seg_only stream and stats files (is affected by
-                            the --3T flag, see below).
+                            the --3T flag, see below). Manual talairach
+                            registrations are not replaced in --edits mode.
 
   MODULES:
   By default, all modules are run.
@@ -177,6 +181,8 @@ SEGMENTATION PIPELINE:
                             \$SUBJECTS_DIR/\$sid/mri/aparc.DKTatlas+aseg.deep.mgz
   --no_biasfield          Deactivate the calculation of partial volume-corrected
                             statistics.
+  --edits                 Support for manedit versions of <asegdkt_segfile>
+                            (see above) and <mask_name>.
 
   CEREBELLUM MODULE:
   --no_cereb              Skip the cerebellum segmentation (CerebNet segmentation)
@@ -221,6 +227,9 @@ SURFACE PIPELINE:
                             to exist already in this case.
   --3T                    Use the 3T atlas for talairach registration (gives better
                             etiv estimates for 3T MR images, default: 1.5T atlas).
+  --edits                 Disable the check for existing recon-surf.sh run and enables
+                            edits of mri/wm.mgz and brain.finalsurfs.mgz by manedit
+                            files as well as FreeSurfer-style WM control points.
 
 Resource Options:
   --device                Set device on which inference should be run ("cpu" for
@@ -370,6 +379,7 @@ case $key in
   --vox_size) vox_size="$1" ; shift ;;
   # --3t: both for surface pipeline and the --tal_reg flag
   --3t) surf_flags+=("--3T") ; atlas3T="true" ;;
+  --edits) surf_flags+=("$key") ; edits="true" ;;
   --threads) threads="$1" ; shift ;;
   --py) python="$1" ; shift ;;
   -h|--help) usage ; exit ;;
@@ -777,6 +787,7 @@ then
   } | tee -a "$seg_log"
 fi
 
+asegdkt_segfile_manedit=$(add_file_suffix "$asegdkt_segfile" "manedit")
 
 if [[ "$run_seg_pipeline" == "1" ]]
 then
@@ -806,6 +817,34 @@ then
       echo "ERROR: FastSurfer asegdkt segmentation failed." | tee -a "$seg_log"
       exit 1
     fi
+    if [[ -e "$asegdkt_segfile_manedit" ]]
+    then
+      if [[ "$edits" == "true" ]]
+      then
+        {
+          echo "INFO: $asegdkt_segfile_manedit (manedit file for <asegdkt_segfile>) detected,"
+          echo "  superceeds $asegdkt_segfile <asegdkt_segfile> for creation of $aseg_segfile"
+          echo "  and $mask_name!"
+        } | tee -a "$seg_log"
+        asegdkt_segfile="$asegdkt_segfile_manedit"
+        cmd=($python "$fastsurfercnndir/reduce_to_aseg.py" -i "$asegdkt_segfile" -o "$aseg_segfile"
+             --outmask "$mask_name" --fixwm)
+        echo_quoted "${cmd[@]}" | tee -a "$seg_log"
+        "${cmd[@]}" | tee -a "$seg_log"
+        exit_code="${PIPESTATUS[0]}"
+        if [[ "${exit_code}" -ne 0 ]]
+        then
+          echo "ERROR: Reduction of asegdkt to aseg failed." | tee -a "$seg_log"
+          exit 1
+        fi
+      else
+        {
+          echo "ERROR: $asegdkt_segfile_manedit (manedit file for <asegdkt_segfile>) detected,"
+          echo "  but edit was not passed. Please delete $asegdkt_segfile_manedit, or add --edits!"
+        } | tee -a "$seg_log"
+        exit 1
+      fi
+    fi
   fi
   if [[ -n "$t2" ]]
   then
@@ -829,8 +868,8 @@ then
     {
       # this will always run, since norm_name is set to subject_dir/mri/orig_nu.mgz, if it is not passed/empty
       cmd=($python "${reconsurfdir}/N4_bias_correct.py" "--in" "$conformed_name"
-           --rescale "$norm_name" --aseg "$asegdkt_segfile" --threads "$threads")
-      echo "INFO: Running N4 bias-field correction"
+           --rescale "$norm_name" --aseg "$aseg_segfile" --threads "$threads")
+      echo "INFO: Running N4 bias-field correction..."
       echo_quoted "${cmd[@]}"
       "${cmd[@]}" 2>&1
     } | tee -a "$seg_log"
@@ -842,7 +881,8 @@ then
 
     if [[ "$run_talairach_registration" == "true" ]]
     then
-      cmd=("$reconsurfdir/talairach-reg.sh" "$sd/$subject/mri" "$atlas3T" "$seg_log")
+      cmd=("$reconsurfdir/talairach-reg.sh" "$sd/$subject/mri"
+        "$conformed_name" "$norm_name" "$atlas3T" "$edits" "$seg_log")
       {
         echo "INFO: Running talairach registration..."
         echo_quoted "${cmd[@]}"
@@ -983,6 +1023,10 @@ then
 #      then
 #        ln -s -r "$asegdkt_segfile" "$merged_segfile"
 #    fi
+else # not running segmentation pipeline
+  # Replace asegdkt_segfile and aseg_segfile variables with manedit file here,
+  # if the manedit exists, so recon-surf uses the manedit file.
+  if [[ -e "$asegdkt_segfile_manedit" ]] ; then asegdkt_segfile="$asegdkt_segfile_manedit" ; fi
 fi
 
 if [[ "$run_surf_pipeline" == "1" ]]
