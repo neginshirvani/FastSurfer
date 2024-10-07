@@ -619,13 +619,19 @@ elif [[ ! -f "$mdir/transforms/talairach.lta" ]] || [[ ! -f "$mdir/transforms/ta
   # if talairach registration is missing, compute it here
   # this also creates talairach.auto.xfm and talairach.xfm and talairach.xfm.lta
   # all transforms (also ltas) are the same
+  cmda=("$binpath/talairach-reg.sh" "$LF"
+        --dir "$mdir" --conformed_name "$mdir/orig.mgz" --norm_name "$mdir/orig_nu.mgz")
+  if [[ "$long" == "1" ]] ; then cmda+=(--long "$basedir") ; fi
+  if [[ "$edits" == "1" ]] ; then cmda+=(--edits) ; fi
+  if [[ "$atlas3T" == "true" ]] ; then cmda+=(--3T) ; fi
+
   {
     echo " "
     echo "============= Computing Talairach Transform ============"
     echo " "
-    echo "\"$binpath/talairach-reg.sh\" \"$mdir\" \"$atlas3T\" \"$LF\""
   } | tee -a "$LF"
-  "$binpath/talairach-reg.sh" "$mdir" "$atlas3T" "$LF"
+  echo_quoted "${cmda[@]}"
+  "${cmda[@]}"
 fi
 
 

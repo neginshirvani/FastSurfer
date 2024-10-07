@@ -881,8 +881,11 @@ then
 
     if [[ "$run_talairach_registration" == "true" ]]
     then
-      cmd=("$reconsurfdir/talairach-reg.sh" "$sd/$subject/mri"
-        "$conformed_name" "$norm_name" "$atlas3T" "$edits" "$seg_log")
+      cmd=("$reconsurfdir/talairach-reg.sh" "$seg_log"
+           --dir "$sd/$subject/mri" --conformed_name "$conformed_name" --norm_name "$norm_name")
+      # if [[ "$long" == "1" ]] ; then cmd+=(--long "$basedir") ; fi
+      if [[ "$edits" == "1" ]] ; then cmd+=(--edits) ; fi
+      if [[ "$atlas3T" == "true" ]] ; then cmd+=(--3T) ; fi
       {
         echo "INFO: Running talairach registration..."
         echo_quoted "${cmd[@]}"
@@ -897,6 +900,8 @@ then
 
     if [[ "$run_asegdkt_module" ]]
     then
+      mask_name_manedit=$(add_file_suffix "$mask_name" "manedit")
+      if [[ -e "$mask_name_manedit" ]] ; then mask_name="$mask_name_manedit" ; fi
       cmd=($python "${fastsurfercnndir}/segstats.py" --segfile "$asegdkt_segfile"
            --segstatsfile "$asegdkt_statsfile" --normfile "$norm_name"
            --threads "$threads" "${allow_root[@]}" --empty --excludeid 0
