@@ -20,6 +20,7 @@ FS_VERSION_SUPPORT="7.4.1"
 # Regular flags default
 t1=""                 # Path and name of T1 input
 asegdkt_segfile=""    # Path and name of segmentation
+mask=""               # Path and name of the brainmask (defaults to $SUBJECTS_DIR/$SID/mri/mask.mgz)
 subject=""            # Subject name
 fstess=0              # run mri_tesselate (FS way), if 0 = run mri_mc
 fsqsphere=0           # run inflate1 and qsphere (FSway), if 0 run spectral projection
@@ -85,6 +86,8 @@ FLAGS:
                             that segmentations produced otherwise are conformed.
                             Requires an ABSOLUTE Path! Default location:
                             \$SUBJECTS_DIR/\$sid/mri/aparc.DKTatlas+aseg.deep.mgz
+  --mask_name <mask_file> Path to the brainmask file to use. Default location:
+                            \$SUBJECTS_DIR/\$sid/mri/mask.mgz
   --fstess                Revert to FreeSurfer mri_tesselate for surface creation
                             (default: mri_mc)
   --fsqsphere             Revert to FreeSurfer iterative inflation for qsphere
@@ -174,6 +177,7 @@ case $key in
     asegdkt_segfile="$1"
     shift # past value
     ;;
+  --mask_name) mask="$1" ; shift ;;
   --vol_segstats)
     echo "WARNING: The --vol_segstats flag is obsolete and will be removed, --vol_segstats ignored."
     ;;
@@ -191,7 +195,7 @@ case $key in
       export FS_LICENSE="$1"
     else
       echo "ERROR: Provided FreeSurfer license file $1 could not be found."
-      echo "  Make sure to provide the full path and name. Exiting..."
+      echo "  Make sure to provide the full path and name."
       exit 1;
     fi
     shift # past value
@@ -217,15 +221,7 @@ echo ""
 
 
 # Warning if run as root user
-if [ -z "$allow_root" ] && [ "$(id -u)" == "0" ]
-then
-  echo "ERROR: You are trying to run '$0' as root. We advice to avoid running FastSurfer "
-  echo "  as root, because it will lead to files and folders created as root."
-  echo "  If you are running FastSurfer in a docker container, you can specify the user with"
-  echo "  '-u \$(id -u):\$(id -g)' (see https://docs.docker.com/engine/reference/run/#user)."
-  echo "  If you want to force running as root, you may pass --allow_root to recon-surf.sh."
-  exit 1;
-fi
+check_allow_root
 
 if [ -z "$SUBJECTS_DIR" ]
 then
@@ -251,7 +247,7 @@ then
   if grep -q -v "${FS_VERSION_SUPPORT}" "$FREESURFER_HOME/build-stamp.txt"
   then
     echo "ERROR: You are trying to run recon-surf with FreeSurfer version $(cat "$FREESURFER_HOME/build-stamp.txt")."
-    echo "  We are currently supporting only FreeSurfer $FS_VERSION_SUPPORT"
+    echo "  We are currently supporting only FreeSurfer $FS_VERSION_SUPPORT."
     echo "  Therefore, make sure to export and source the correct FreeSurfer version"
     echo "  before running recon-surf.sh: "
     echo "  export FREESURFER_HOME=/path/to/your/local/fs$FS_VERSION_SUPPORT"
@@ -274,7 +270,7 @@ fi
 
 if [[ "$base" == "1" ]]
 then
-  if [ ! -f "$sd/$subject/base-tps.fastsurfer" ] ; then
+  if [ ! -f "$SUBJECTS_DIR/$subject/base-tps.fastsurfer" ] ; then
     echo "ERROR: $subject is either not found in SUBJECTS_DIR"
     echo "or it is not a longitudinal template directory (base),"
     echo "which needs to contain base-tps.fastsurfer file. Please ensure that"
@@ -380,8 +376,10 @@ sdir="$SUBJECTS_DIR/$subject/surf"
 statsdir="$SUBJECTS_DIR/$subject/stats"
 ldir="$SUBJECTS_DIR/$subject/label"
 
-mask="$mdir/mask.mgz"
-
+# set default mask and make mask absolute
+if [[ -z "$mask" ]] ; then mask="$mdir/mask.mgz"
+elif [[ "${mask:0:1}" != "/" ]] ; then mask="$SUBJECTS_DIR/$subject/$mask"
+fi
 
 # Set up log file
 DoneFile="$SUBJECTS_DIR/$subject/scripts/recon-surf.done"
@@ -404,8 +402,7 @@ echo "Log file for recon-surf.sh" >> "$LF"
     echo " "
     echo "================== BASE - Longitudinal Template Creation ========================="
     echo " "
-  fi
-  if [ "$long" == "1" ] ; then
+  elif [ "$long" == "1" ] ; then
     echo " "
     echo "================== LONG - Longitudinal Timpe Point Creation ======================"
     echo "long: using template directory (base) $baseid"
@@ -491,11 +488,10 @@ popd > /dev/null || ( echo "Could not change to subject_dir" ; exit 1 )
 
 # ============================= MASK & ASEG_noCC ========================================
 
-
 if [ "$long" == "1" ] ; then
   # for long we copy mask from base
-  cmd=(cp "$basedir/mri/mask.mgz" "$mask")
-  RunIt "${cmd[*]}" "$LF"
+  cmda=(cp "$basedir/mri/mask.mgz" "$mask")
+  run_it "$LF" "${cmda[@]}"
 fi
 
 if [ ! -f "$mask" ] || [ ! -f "$mdir/aseg.auto_noCCseg.mgz" ] ; then
@@ -504,14 +500,14 @@ if [ ! -f "$mask" ] || [ ! -f "$mdir/aseg.auto_noCCseg.mgz" ] ; then
     echo " "
     echo "============= Creating aseg.auto_noCCseg (map aparc labels back) ==============="
     echo " "
-    echo "WARNING: mri/mask.mgz or mri/aseg.auto_noCCseg.mgz are missing, but these files are"
+    echo "WARNING: $mask or mri/aseg.auto_noCCseg.mgz are missing, but these files are"
     echo "  required in recon-surf.sh and always created in the segmentation pipeline run."
     echo "  It is recommended to transfer these files from there!"
   } | tee -a "$LF"
 
   # reduce labels to aseg, then create mask (dilate 5, erode 4, largest component), also mask aseg to remove outliers
   # output will be uchar (else mri_cc will fail below)
-  cmd=($python "$FASTSURFER_HOME/FastSurferCNN/reduce_to_aseg.py" -i "$mdir/aparc.DKTatlas+aseg.orig.mgz"
+  cmda=($python "$FASTSURFER_HOME/FastSurferCNN/reduce_to_aseg.py" -i "$mdir/aparc.DKTatlas+aseg.orig.mgz"
        -o "$mdir/aseg.auto_noCCseg.mgz" --fixwm)
 
   if [ "$base" == "1" ] && [ ! -f "$mask" ] ; then
@@ -520,10 +516,10 @@ if [ ! -f "$mask" ] || [ ! -f "$mdir/aseg.auto_noCCseg.mgz" ] ; then
     exit 1
   elif [ "$long" != "1" ] && [ "$base" != 1 ] ; then
     # cross-sectional processing, add outmask to cmd (not for or base long stream)
-    cmd+=(--outmask "$mask")
+    cmda+=(--outmask "$mask")
   fi
 
-  RunIt "${cmd[*]}" "$LF"
+  run_it "$LF" "${cmda[@]}"
 fi
 
 
@@ -605,8 +601,8 @@ fi
 } | tee -a $LF
 
 # create norm by masking nu
-cmd=(mri_mask "$mdir/nu.mgz" "$mask" "$mdir/norm.mgz")
-RunIt "${cmd[*]}" "$LF"
+cmda=(mri_mask "$mdir/nu.mgz" "$mask" "$mdir/norm.mgz")
+run_it "$LF" "${cmda[@]}"
 if [ "$get_t1" == "1" ]
 then
   # create T1.mgz from nu (!! here we could also try passing aseg?)
@@ -623,11 +619,11 @@ then
   #  base_flags="-w $mdir/ctrl_vol.mgz $mdir/bias_vol.mgz"
   #fi
   # cmd="mri_normalize -g 1 -seed 1234 -mprage $base_flags $mdir/nu.mgz $mdir/T1.mgz $noconform_if_hires"
-  cmd=(mri_normalize -g 1 -seed 1234 -mprage "$mdir/nu.mgz" "$mdir/T1.mgz" $noconform_if_hires)
-  RunIt "${cmd[*]}" "$LF"
+  cmda=(mri_normalize -g 1 -seed 1234 -mprage "$mdir/nu.mgz" "$mdir/T1.mgz" $noconform_if_hires)
+  run_it "$LF" "${cmda[@]}"
   # create brainmask by masking T1
-  cmd=(mri_mask "$mdir/T1.mgz" "$mask" "$mdir/brainmask.mgz")
-  RunIt "${cmd[*]}" "$LF"
+  cmda=(mri_mask "$mdir/T1.mgz" "$mask" "$mdir/brainmask.mgz")
+  run_it "$LF" "${cmda[@]}"
 else
   # create brainmask by linkage to norm.mgz (masked nu.mgz)
   pushd "$mdir" > /dev/null || ( echo "Could not cd to $mdir" ; exit 1 )
@@ -659,21 +655,21 @@ RunIt "$cmd" "$LF"
   echo " "
   echo "========= Creating filled from brain (brainfinalsurfs, wm.asegedit, wm)  ======="
   echo " "
-} | tee -a $LF
+} | tee -a "$LF"
 
 if [ "$long" == "1" ] ; then
   # in long we can skip fill as surfaces come from base
   # it would be great to also skip WM, but it is needed in place_surface to clip bright
   # maybe later add code to copy edits from base in maskbfs and wm segmentation, currently not supported!
   cmd="recon-all -s $subject -asegmerge -normalization2 -maskbfs -segmentation $hiresflag $fsthreads"
-  RunIt "$cmd" $LF
+  RunIt "$cmd" "$LF"
   # copy over filled from base for stop-edits to transfer to long (a bit of a hack)
   cmd="cp $basedir/mri/filled.mgz $mdir/filled.mgz"
-  RunIt "$cmd" $LF
+  RunIt "$cmd" "$LF"
 else # cross and base
   # filled is needed to generate initial WM surfaces
   cmd="recon-all -s $subject -asegmerge -normalization2 -maskbfs -segmentation -fill $hiresflag $fsthreads"
-  RunIt "$cmd" $LF
+  RunIt "$cmd" "$LF"
 fi
 
 
@@ -805,24 +801,24 @@ for hemi in lh rh ; do
   # In Long stream we skip topo fix
   if [ "$long" == "0" ] ; then
 
-  {
-    echo "echo \"\""
-    echo "echo \"=================== Creating surfaces $hemi - fix ========================\""
-    echo "echo \"\""
-  } | tee -a "$CMDF"
+    {
+      echo "echo \"\""
+      echo "echo \"=================== Creating surfaces $hemi - fix ========================\""
+      echo "echo \"\""
+    } | tee -a "$CMDF"
 
-  cmd="recon-all -subject $subject -hemi $hemi -fix -no-isrunning $hiresflag $fsthreads"
-  RunIt "$cmd" $LF $CMDF
+    cmd="recon-all -subject $subject -hemi $hemi -fix -no-isrunning $hiresflag $fsthreads"
+    RunIt "$cmd" "$LF" "$CMDF"
 
-  # fix the surfaces if they are corrupt
-  cmd="$python ${binpath}rewrite_oriented_surface.py --file $sdir/$hemi.orig.premesh --backup $sdir/$hemi.orig.premesh.noorient"
-  RunIt "$cmd" $LF $CMDF
-  cmd="$python ${binpath}rewrite_oriented_surface.py --file $sdir/$hemi.orig --backup $sdir/$hemi.orig.noorient"
-  RunIt "$cmd" $LF $CMDF
+    # fix the surfaces if they are corrupt
+    cmd="$python ${binpath}rewrite_oriented_surface.py --file $sdir/$hemi.orig.premesh --backup $sdir/$hemi.orig.premesh.noorient"
+    RunIt "$cmd" "$LF" "$CMDF"
+    cmd="$python ${binpath}rewrite_oriented_surface.py --file $sdir/$hemi.orig --backup $sdir/$hemi.orig.noorient"
+    RunIt "$cmd" "$LF" "$CMDF"
 
-  # create first WM surface white.preaparc from topo fixed orig surf
-  cmd="recon-all -subject $subject -hemi $hemi -autodetgwstats -white-preaparc -no-isrunning $hiresflag $fsthreads"
-  RunIt "$cmd" "$LF" "$CMDF"
+    # create first WM surface white.preaparc from topo fixed orig surf
+    cmd="recon-all -subject $subject -hemi $hemi -autodetgwstats -white-preaparc -no-isrunning $hiresflag $fsthreads"
+    RunIt "$cmd" "$LF" "$CMDF"
 
   else # longitudinal
 
@@ -832,7 +828,7 @@ for hemi in lh rh ; do
 
     # for place_surfaces white.preparc we need to directly call it with special long parameter:
     # cmd="recon-all -subject $subject -hemi $hemi -white-preaparc -no-isrunning $hiresflag $fsthreads"
-    cmd="mris_place_surface --adgws-in $sdir/autodet.gw.stats.$hemi.dat --wm $mdir/wm.mgz --threads $threads --invol $mdir/brain.finalsurfs.mgz --$hemi --i $sdir/$hemi.orig --o $sdir/${hemi}.white.preaparc --white --seg $mdir/aseg.presurf.mgz --max-cbv-dist 3.5"
+    cmd="mris_place_surface --adgws-in $sdir/autodet.gw.stats.$hemi.dat --wm $mdir/$wm_file --threads $threads --invol $mdir/brain.finalsurfs.mgz --$hemi --i $sdir/$hemi.orig --o $sdir/${hemi}.white.preaparc --white --seg $mdir/aseg.presurf.mgz --max-cbv-dist 3.5"
     RunIt "$cmd" "$LF" "$CMDF"
 
   fi # long
@@ -1001,25 +997,31 @@ for hemi in lh rh ; do
   echo "pushd $mdir > /dev/null" >> "$CMDF"
 
   # CREATE WHITE SURFACE:
+  wm_file="wm.mgz"
   # 4 min compute white :
-  inputsurf="../surf/$hemi.white.preaparc"
-  longmaxdist=""
-  if [ "$long" == "1" ] ; then
-    inputsurf="../surf/$hemi.orig_white"
-    longmaxdist="--max-cbv-dist 3.5"
+  cmd="mris_place_surface --adgws-in ../surf/autodet.gw.stats.${hemi}.dat --seg aseg.presurf.mgz \
+    --threads $threads --wm $wm_file --invol brain.finalsurfs.mgz --$hemi --o ../surf/${hemi}.white \
+    --white --nsmooth 0 --rip-label ../label/${hemi}.cortex.label \
+    --rip-bg --rip-surf ../surf/${hemi}.white.preaparc --aparc $aparc"
+  if [ "$long" == "0" ] ; then # cross/regular/base
+    cmd="$cmd --i ../surf/$hemi.white.preaparc"
+  else  # longitudinal processing ; also adds longmaxdist
+    cmd="$cmd --i ../surf/$hemi.orig_white --max-cbv-dist 3.5"
   fi
-  cmd="mris_place_surface --adgws-in ../surf/autodet.gw.stats.${hemi}.dat --seg aseg.presurf.mgz --threads $threads --wm wm.mgz --invol brain.finalsurfs.mgz --$hemi --i $inputsurf --o ../surf/${hemi}.white --white --nsmooth 0 --rip-label ../label/${hemi}.cortex.label --rip-bg --rip-surf ../surf/${hemi}.white.preaparc --aparc $aparc $longmaxdist"
   RunIt "$cmd" "$LF" "$CMDF"
 
   # CREAT PIAL SURFACE
   # 4 min compute pial :
-  inputsurf="../surf/$hemi.white"
-  longmaxdist=""
-  if [ "$long" == "1" ] ; then
-    inputsurf="../surf/$hemi.orig_pial"
-    longmaxdist="--max-cbv-dist 3.5 --blend-surf .25 ../surf/$hemi.white"
+  cmd="mris_place_surface --adgws-in ../surf/autodet.gw.stats.${hemi}.dat --seg aseg.presurf.mgz \
+    --threads $threads --wm $wm_file --invol brain.finalsurfs.mgz --$hemi --o ../surf/${hemi}.pial.T1 \
+    --pial --nsmooth 0 --rip-label ../label/${hemi}.cortex+hipamyg.label \
+    --pin-medial-wall ../label/${hemi}.cortex.label --aparc $aparc \
+    --repulse-surf ../surf/${hemi}.white --white-surf ../surf/${hemi}.white"
+  if [ "$long" == "0" ] ; then # cross/regular/base
+    cmd="$cmd --i ../surf/$hemi.white"
+  else  # longitudinal processing ; also adds longmaxdist
+    cmd="$cmd --i ../surf/$hemi.orig_pial --max-cbv-dist 3.5 --blend-surf .25 ../surf/$hemi.white"
   fi
-  cmd="mris_place_surface --adgws-in ../surf/autodet.gw.stats.${hemi}.dat --seg aseg.presurf.mgz --threads $threads --wm wm.mgz --invol brain.finalsurfs.mgz --$hemi --i $inputsurf --o ../surf/${hemi}.pial.T1 --pial --nsmooth 0 --rip-label ../label/${hemi}.cortex+hipamyg.label --pin-medial-wall ../label/${hemi}.cortex.label --aparc $aparc --repulse-surf ../surf/${hemi}.white --white-surf ../surf/${hemi}.white $longmaxdist"
   RunIt "$cmd" "$LF" "$CMDF"
 
   echo "popd > /dev/null" >> "$CMDF"
@@ -1027,11 +1029,9 @@ for hemi in lh rh ; do
   # Here insert DoT2Pial  later --> if T2pial is not run, need to softlink pial.T1 to pial!
   echo "pushd $sdir > /dev/null" >> "$CMDF"
   softlink_or_copy "$hemi.pial.T1" "$hemi.pial" "$LF" "$CMDF"
-  echo "popd > /dev/null" >> "$CMDF"
 
   # these are run automatically in fs7* recon-all and cannot be called directly without -pial flag (or other t2 flags)
   # they are the same for fsaparc and long
-  echo "pushd $mdir > /dev/null" >> "$CMDF"
   cmd="mris_place_surface --curv-map ../surf/$hemi.white 2 10 ../surf/$hemi.curv"
   RunIt "$cmd" "$LF" "$CMDF"
   cmd="mris_place_surface --area-map ../surf/$hemi.white ../surf/$hemi.area"
@@ -1198,37 +1198,37 @@ if [ "$base" != "1" ] ; then
     # get stats for the aseg (note these are surface fine tuned, that may be good or bad, below we also do the stats for the input aseg (plus some processing)
     # cmd="recon-all -subject $subject -segstats $hiresflag $fsthreads"
     if [[ "$segstats_legacy" == "true" ]] ; then
-      cmd=($python "$FASTSURFER_HOME/FastSurferCNN/mri_brainvol_stats.py"
-           --subject "$subject")
-      RunIt "$(echo_quoted "${cmd[@]}")" "$LF"
+      cmda=($python "$FASTSURFER_HOME/FastSurferCNN/mri_brainvol_stats.py"
+            --subject "$subject")
+      run_it "$LF" "${cmda[@]}"
 
-      cmd=($python "$FASTSURFER_HOME/FastSurferCNN/mri_segstats.py" --seed 1234
-           --seg "$mdir/aseg.mgz" --sum "$statsdir/aseg.stats" --pv "$mdir/norm.mgz"
-           "--in-intensity-name" norm "--in-intensity-units" MR --subject "$subject"
-           --surf-wm-vol --ctab "$FREESURFER_HOME/ASegStatsLUT.txt" --etiv
-           --threads "$threads")
+      cmda=($python "$FASTSURFER_HOME/FastSurferCNN/mri_segstats.py" --seed 1234
+            --seg "$mdir/aseg.mgz" --sum "$statsdir/aseg.stats" --pv "$mdir/norm.mgz"
+            "--in-intensity-name" norm "--in-intensity-units" MR --subject "$subject"
+            --surf-wm-vol --ctab "$FREESURFER_HOME/ASegStatsLUT.txt" --etiv
+            --threads "$threads")
 #      cmd="$python $FASTSURFER_HOME/FastSurferCNN/mri_segstats.py --seed 1234 --seg $mdir/wmparc.mgz --sum $statsdir/wmparc.stats --pv $mdir/norm.mgz --in-intensity-name norm --in-intensity-units MR --subject $subject --surf-wm-vol --ctab $FREESURFER_HOME/WMParcStatsLUT.txt --etiv"
     else
       # calculate brainvol stats and aseg stats with segstats.py
-      cmd=($python "$FASTSURFER_HOME/FastSurferCNN/segstats.py" --sid "$subject"
-         --segfile "$mdir/aseg.mgz" --segstatsfile "$statsdir/aseg.stats"
-         --pvfile "$mdir/norm.mgz" --normfile "$mdir/norm.mgz" --threads "$threads"
-         # --excl-ctxgmwm: exclude Left/Right WM / Cortex despite ASegStatsLUT.txt
-         --excludeid 0 2 3 41 42
-         --lut "$FREESURFER_HOME/ASegStatsLUT.txt" --empty
-         measures --compute "BrainSeg" "BrainSegNotVent" "VentricleChoroidVol"
-                            "lhCortex" "rhCortex" "Cortex" "lhCerebralWhiteMatter"
-                            "rhCerebralWhiteMatter" "CerebralWhiteMatter"
-                            "SubCortGray" "TotalGray" "SupraTentorial"
-                            "SupraTentorialNotVent" "Mask($mdir/mask.mgz)"
-                            "BrainSegVol-to-eTIV" "MaskVol-to-eTIV")
+      cmda=($python "$FASTSURFER_HOME/FastSurferCNN/segstats.py" --sid "$subject"
+            --segfile "$mdir/aseg.mgz" --segstatsfile "$statsdir/aseg.stats"
+            --pvfile "$mdir/norm.mgz" --normfile "$mdir/norm.mgz" --threads "$threads"
+            # --excl-ctxgmwm: exclude Left/Right WM / Cortex despite ASegStatsLUT.txt
+            --excludeid 0 2 3 41 42
+            --lut "$FREESURFER_HOME/ASegStatsLUT.txt" --empty
+            measures --compute "BrainSeg" "BrainSegNotVent" "VentricleChoroidVol"
+                               "lhCortex" "rhCortex" "Cortex" "lhCerebralWhiteMatter"
+                               "rhCerebralWhiteMatter" "CerebralWhiteMatter"
+                               "SubCortGray" "TotalGray" "SupraTentorial"
+                               "SupraTentorialNotVent" "Mask($mask)"
+                               "BrainSegVol-to-eTIV" "MaskVol-to-eTIV")
       if [ "$long" == "0" ] ; then
         # in long we do not have orig_nofix for surface hole computation as surfaces
         # are inherited from base/template
-        cmd+=("lhSurfaceHoles" "rhSurfaceHoles" "SurfaceHoles")
+        cmda+=("lhSurfaceHoles" "rhSurfaceHoles" "SurfaceHoles")
       fi
-      cmd+=("EstimatedTotalIntraCranialVol")
-      RunIt "$(echo_quoted "${cmd[@]}")" "$LF"
+      cmda+=("EstimatedTotalIntraCranialVol")
+      run_it "$LF" "${cmda[@]}"
       echo "Extract the brainvol stats section from segstats output." | tee -a "$LF"
       # ... so stats/brainvol.stats also exists (but it is slightly different
 #      cmd="recon-all -subject $subject -segstats $hiresflag $fsthreads"
@@ -1236,18 +1236,18 @@ if [ "$base" != "1" ] ; then
 
       # this call is only "required" to "compute" brainvol.stats, so --normfile/--pvfile
       # are not required
-      cmd=($python "$FASTSURFER_HOME/FastSurferCNN/segstats.py" --sid "$subject"
-           --segfile "$mdir/aseg.mgz" --pvfile "$mdir/norm.mgz"
-           --measure_only --threads "$threads" --segstatsfile "$statsdir/brainvol.stats"
-           measures --file "$statsdir/aseg.stats"
-                    --import "BrainSeg" "BrainSegNotVent" "SupraTentorial"
-                             "SupraTentorialNotVent" "SubCortGray" "lhCortex" "rhCortex"
-                             "Cortex" "TotalGray" "lhCerebralWhiteMatter"
-                             "rhCerebralWhiteMatter" "CerebralWhiteMatter" "Mask"
-                    --compute "SupraTentorialNotVentVox" "BrainSegNotVentSurf"
-                              "VentricleChoroidVol")
+      cmda=($python "$FASTSURFER_HOME/FastSurferCNN/segstats.py" --sid "$subject"
+            --segfile "$mdir/aseg.mgz" --pvfile "$mdir/norm.mgz"
+            --measure_only --threads "$threads" --segstatsfile "$statsdir/brainvol.stats"
+            measures --file "$statsdir/aseg.stats"
+                     --import "BrainSeg" "BrainSegNotVent" "SupraTentorial"
+                              "SupraTentorialNotVent" "SubCortGray" "lhCortex" "rhCortex"
+                              "Cortex" "TotalGray" "lhCerebralWhiteMatter"
+                              "rhCerebralWhiteMatter" "CerebralWhiteMatter" "Mask"
+                     --compute "SupraTentorialNotVentVox" "BrainSegNotVentSurf"
+                               "VentricleChoroidVol")
     fi
-    RunIt "$(echo_quoted "${cmd[@]}")" "$LF"
+    run_it "$LF" "${cmda[@]}"
   fi
 
 # ============================= MAPPED-WMPARC =========================================
@@ -1261,25 +1261,25 @@ if [ "$base" != "1" ] ; then
     # 1m 11sec also create stats for aseg.presurf.hypos (which is basically the aseg derived from the input with CC and
     # hypos) difference between this and the surface improved one above are probably tiny, so the surface improvement
     # above can probably be skipped to save time
-    cmd=($python "$FASTSURFER_HOME/FastSurferCNN/mri_segstats.py" --seed 1234
-         --seg "$mdir/aseg.presurf.hypos.mgz" --sum "$statsdir/aseg.presurf.hypos.stats"
-         --pv "$mdir/norm.mgz" --empty --brainmask "$mdir/brainmask.mgz"
-         --brain-vol-from-seg --excludeid 0 --excl-ctxgmwm --supratent --subcortgray
-         "--in" "$mdir/norm.mgz" "--in-intensity-name" norm "--in-intensity-units" MR
-         --etiv --surf-wm-vol --surf-ctx-vol --totalgray --euler
-         --ctab "$FREESURFER_HOME/ASegStatsLUT.txt" --subject "$subject")
+    cmda=($python "$FASTSURFER_HOME/FastSurferCNN/mri_segstats.py" --seed 1234
+          --seg "$mdir/aseg.presurf.hypos.mgz" --sum "$statsdir/aseg.presurf.hypos.stats"
+          --pv "$mdir/norm.mgz" --empty --brainmask "$mdir/brainmask.mgz"
+          --brain-vol-from-seg --excludeid 0 --excl-ctxgmwm --supratent --subcortgray
+          "--in" "$mdir/norm.mgz" "--in-intensity-name" norm "--in-intensity-units" MR
+          --etiv --surf-wm-vol --surf-ctx-vol --totalgray --euler
+          --ctab "$FREESURFER_HOME/ASegStatsLUT.txt" --subject "$subject")
   else
     # segstats.py version of the mri_segstats call
-    cmd=($python "$FASTSURFER_HOME/FastSurferCNN/segstats.py" --sid "$subject"
-         --segfile "$mdir/aseg.presurf.hypos.mgz" --normfile "$mdir/norm.mgz"
-         --pvfile "$mdir/norm.mgz" --segstatsfile "$statsdir/aseg.presurf.hypos.stats"
-         # --excl-ctxgmwm: exclude Left/Right WM / Cortex despite ASegStatsLUT.txt
-         --excludeid 0 2 3 41 42
-         --lut "$FREESURFER_HOME/ASegStatsLUT.txt" --threads "$threads" --empty
-         --volume_precision 1
-         measures --file "$statsdir/aseg.stats" --import "all")
+    cmda=($python "$FASTSURFER_HOME/FastSurferCNN/segstats.py" --sid "$subject"
+          --segfile "$mdir/aseg.presurf.hypos.mgz" --normfile "$mdir/norm.mgz"
+          --pvfile "$mdir/norm.mgz" --segstatsfile "$statsdir/aseg.presurf.hypos.stats"
+          # --excl-ctxgmwm: exclude Left/Right WM / Cortex despite ASegStatsLUT.txt
+          --excludeid 0 2 3 41 42
+          --lut "$FREESURFER_HOME/ASegStatsLUT.txt" --threads "$threads" --empty
+          --volume_precision 1
+          measures --file "$statsdir/aseg.stats" --import "all")
   fi
-  RunIt "$(echo_quoted "${cmd[@]}")" "$LF"
+  run_it "$LF" "${cmda[@]}"
   # -wmparc based on mapped aparc labels (from input asegdkt_segfile) (1min40sec) needs ribbon and we need to point it to aparc.mapped:
   cmd="mri_surf2volseg --o $mdir/wmparc.DKTatlas.mapped.mgz --label-wm --i $mdir/aparc.DKTatlas+aseg.mapped.mgz --threads $threads --lh-annot $ldir/lh.aparc.DKTatlas.mapped.annot 3000 --lh-cortex-mask $ldir/lh.cortex.label --lh-white $sdir/lh.white --lh-pial $sdir/lh.pial --rh-annot $ldir/rh.aparc.DKTatlas.mapped.annot 4000 --rh-cortex-mask $ldir/rh.cortex.label --rh-white $sdir/rh.white --rh-pial $sdir/rh.pial"
   RunIt "$cmd" "$LF"
@@ -1287,26 +1287,26 @@ if [ "$base" != "1" ] ; then
   # takes a few mins
   #cmd="mri_segstats --seed 1234 --seg $mdir/wmparc.DKTatlas.mapped.mgz --sum $mdir/../stats/wmparc.DKTatlas.mapped.stats --pv $mdir/norm.mgz --excludeid 0 --brainmask $mdir/brainmask.mgz --in $mdir/norm.mgz --in-intensity-name norm --in-intensity-units MR --subject $subject --surf-wm-vol --ctab $FREESURFER_HOME/WMParcStatsLUT.txt"
   if [[ "$segstats_legacy" == "true" ]] ; then
-    cmd=($python "$FASTSURFER_HOME/FastSurferCNN/mri_segstats.py"
-         --seed 1234 --seg "$mdir/wmparc.DKTatlas.mapped.mgz"
-         --sum "$statsdir/wmparc.DKTatlas.mapped.stats" --pv "$mdir/norm.mgz"
-         --excludeid 0 --brainmask "$mdir/brainmask.mgz" "--in" "$mdir/norm.mgz"
-         "--in-intensity-name" norm "--in-intensity-units" MR
-         --subject "$subject" --surf-wm-vol
-         --ctab "$FREESURFER_HOME/WMParcStatsLUT.txt")
+    cmda=($python "$FASTSURFER_HOME/FastSurferCNN/mri_segstats.py"
+          --seed 1234 --seg "$mdir/wmparc.DKTatlas.mapped.mgz"
+          --sum "$statsdir/wmparc.DKTatlas.mapped.stats" --pv "$mdir/norm.mgz"
+          --excludeid 0 --brainmask "$mdir/brainmask.mgz" "--in" "$mdir/norm.mgz"
+          "--in-intensity-name" norm "--in-intensity-units" MR
+          --subject "$subject" --surf-wm-vol
+          --ctab "$FREESURFER_HOME/WMParcStatsLUT.txt")
   else
     #
-    cmd=($python "$FASTSURFER_HOME/FastSurferCNN/segstats.py"
-         --sid "$subject" --sd "$SUBJECTS_DIR" --pvfile "$mdir/norm.mgz"
-         --segfile "$mdir/wmparc.DKTatlas.mapped.mgz" --normfile "$mdir/norm.mgz"
-         --lut "$FREESURFER_HOME/WMParcStatsLUT.txt" --threads "$threads"
-         --segstatsfile "$statsdir/wmparc.DKTatlas.mapped.stats" --empty
-         --volume_precision 1
-         measures --file "$statsdir/brainvol.stats" --import "Mask"
-                  "VentricleChoroidVol" "rhCerebralWhiteMatter" "lhCerebralWhiteMatter"
-                  "CerebralWhiteMatter")
+    cmda=($python "$FASTSURFER_HOME/FastSurferCNN/segstats.py"
+          --sid "$subject" --sd "$SUBJECTS_DIR" --pvfile "$mdir/norm.mgz"
+          --segfile "$mdir/wmparc.DKTatlas.mapped.mgz" --normfile "$mdir/norm.mgz"
+          --lut "$FREESURFER_HOME/WMParcStatsLUT.txt" --threads "$threads"
+          --segstatsfile "$statsdir/wmparc.DKTatlas.mapped.stats" --empty
+          --volume_precision 1
+          measures --file "$statsdir/brainvol.stats" --import "Mask"
+                   "VentricleChoroidVol" "rhCerebralWhiteMatter" "lhCerebralWhiteMatter"
+                   "CerebralWhiteMatter")
   fi
-  RunIt "$(echo_quoted "${cmd[@]}")" "$LF"
+  run_it "$LF" "${cmda[@]}"
 
 
 # ============================= FASTSURFER - SYMLINKS =========================================

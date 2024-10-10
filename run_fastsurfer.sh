@@ -73,10 +73,11 @@ threads="1"
 python="python3.10 -s"
 allow_root=()
 version_and_quit=""
+warn_seg_only=()
+warn_base=()
 base=0                # flag for longitudinal template (base) run
 long=0                # flag for longitudinal time point run
 baseid=""             # baseid for logitudinal time point run
-
 
 function usage()
 {
@@ -355,8 +356,8 @@ case $key in
   --t1) t1="$1" ; shift ;;
   --t2) t2="$1" ; shift ;;
   --seg_log) seg_log="$1" ; shift ;;
-  --conformed_name) conformed_name="$1" ; shift ;;
-  --norm_name) norm_name="$1" ; shift ;;
+  --conformed_name) conformed_name="$1" ; warn_seg_only+=("$key" "$1") ; shift ;;
+  --norm_name) norm_name="$1" ; warn_seg_only+=("$key" "$1") ; shift ;;
   --norm_name_t2) norm_name_t2="$1" ; shift ;;
   --seg|--asegdkt_segfile|--aparc_aseg_segfile)
     if [[ "$key" != "--asegdkt_segfile" ]]
@@ -430,7 +431,7 @@ case $key in
     ;;
   --asegdkt_statsfile) asegdkt_statsfile="$1" ; shift ;;
   --aseg_segfile) aseg_segfile="$1" ; shift ;;
-  --mask_name) mask_name="$1" ; shift ;;
+  --mask_name) mask_name="$1" ; warn_seg_only+=("$key" "$1") ; warn_base+=("$key" "$1") ; shift ;;
   --merged_segfile) merged_segfile="$1" ; shift ;;
 
   # cereb module options
@@ -492,6 +493,12 @@ else
 fi
 
 ########################################## VERSION AND QUIT HERE ########################################
+# make sure the python  executable is valid and found
+if [[ -z "$(which "${python/ */}")" ]]; then
+  echo "Cannot find the python interpreter ${python/ */}."
+  exit 1
+fi
+
 version_args=()
 if [[ -f "$FASTSURFER_HOME/BUILD.info" ]]
 then
@@ -509,22 +516,8 @@ then
   exit
 fi
 
-# make sure the python  executable is valid and found
-if [[ -z "$(which "${python/ */}")" ]]; then
-  echo "Cannot find the python interpreter ${python/ */}."
-  exit 1
-fi
-
 # Warning if run as root user
-if [[ "${#allow_root}" == 0 ]] && [[ "$(id -u)" == "0" ]]
-then
-  echo "ERROR: You are trying to run '$0' as root. We advice to avoid running FastSurfer"
-  echo "  as root, because it will lead to files and folders created as root."
-  echo "  If you are running FastSurfer in a docker container, you can specify the user"
-  echo "  with '-u \$(id -u):\$(id -g)' (see https://docs.docker.com/engine/reference/run/#user)."
-  echo "  If you want to force running as root, you may pass --allow_root to run_fastsurfer.sh."
-  exit 1
-fi
+check_allow_root
 
 # CHECKS
 
@@ -549,8 +542,15 @@ fi
 
 if [[ -z "$subject" ]]
 then
-  echo "ERROR: must supply subject name via --sid"
+  echo "ERROR: You must supply a subject name via --sid!"
   exit 1
+fi
+
+if [[ "${#warn_seg_only[@]}" -gt 0 ]] && [[ "$run_surf_pipeline" == "1" ]]
+then
+  echo "WARNING: Specifying '${warn_seg_only[*]}' only affects the segmentation "
+  echo "  pipeline and not the surface pipeline. It can therefore have unexpected consequences"
+  echo "  on surface processing."
 fi
 
 # DEFAULT FILE NAMES
@@ -572,9 +572,9 @@ if [[ -z "$build_log" ]] ; then build_log="${sd}/${subject}/scripts/build.log" ;
 if [[ -n "$t2" ]]
 then
   if [[ ! -f "$t2" ]]
-    then
-      echo "ERROR: T2 file $t2 does not exist!"
-      exit 1
+  then
+    echo "ERROR: T2 file $t2 does not exist!"
+    exit 1
   fi
   copy_name_T2="${sd}/${subject}/mri/orig/T2.001.mgz"
 fi
@@ -609,7 +609,7 @@ fi
 #    echo "ERROR: Specified segmentation outputs do not have same file type."
 #    echo "You passed --asegdkt_segfile ${asegdkt_segfile} and --merged_segfile ${merged_segfile}."
 #    echo "Make sure these have the same file-format and adjust the names passed to the flags accordingly!"
-#    exit 1;
+#    exit 1
 #fi
 
 if [[ "${asegdkt_segfile: -3}" != "${conformed_name: -3}" ]]
@@ -649,8 +649,9 @@ then
   if [[ ! -f "$asegdkt_segfile" ]]
   then
     echo "ERROR: To run the cerebellum segmentation but no asegdkt, the aseg segmentation must already exist."
-    echo "You passed --no_asegdkt but the asegdkt segmentation ($asegdkt_segfile) could not be found."
-    echo "If the segmentation is not saved in the default location ($asegdkt_segfile_default), specify the absolute path and name via --asegdkt_segfile"
+    echo "  You passed --no_asegdkt but the asegdkt segmentation ($asegdkt_segfile) could not be found."
+    echo "  If the segmentation is not saved in the default location ($asegdkt_segfile_default),"
+    echo "  specify the absolute path and name via --asegdkt_segfile"
     exit 1
   fi
 fi
@@ -659,7 +660,7 @@ fi
 if [[ "$run_surf_pipeline" == "0" ]] && [[ "$run_seg_pipeline" == "0" ]]
 then
   echo "ERROR: You specified both --surf_only and --seg_only. Therefore neither part of the pipeline will be run."
-  echo "To run the whole FastSurfer pipeline, omit both flags."
+  echo "  To run the whole FastSurfer pipeline, omit both flags."
   exit 1
 fi
 
@@ -668,22 +669,22 @@ then
   msg="The surface pipeline and the talairach-registration in the segmentation pipeline require a FreeSurfer License"
   if [[ -z "$FS_LICENSE" ]]
   then
-    msg="$msg, but no license was provided via --fs_license or the FS_LICENSE environment variable."
+    msg="$msg, but no license was provided via --fs_license or the FS_LICENSE environment variable"
     if [[ "$DO_NOT_SEARCH_FS_LICENSE_IN_FREESURFER_HOME" != "true" ]] && [[ -n "$FREESURFER_HOME" ]]
     then
-      echo "WARNING: $msg Checking common license files in \$FREESURFER_HOME."
+      echo "WARNING: $msg. Checking common license files in \$FREESURFER_HOME."
       for filename in "license.dat" "license.txt" ".license"
       do
         if [[ -f "$FREESURFER_HOME/$filename" ]]
         then
-          echo "Trying with '$FREESURFER_HOME/$filename', specify a license with --fs_license to overwrite."
+          echo "  Trying with '$FREESURFER_HOME/$filename', specify a license with --fs_license to overwrite."
           export FS_LICENSE="$FREESURFER_HOME/$filename"
           break
         fi
       done
       if [[ -z "$FS_LICENSE" ]]; then echo "ERROR: No license found..." ; exit 1 ; fi
     else
-      echo "ERROR: $msg"
+      echo "ERROR: $msg."
       exit 1
     fi
   elif [[ ! -f "$FS_LICENSE" ]]
@@ -714,7 +715,11 @@ then
     echo "WARNING: --t1 was passed but will be overwritten with T1 from base template."
   fi
   # base can only be run with the template image from base-setup:
-  t1=$sd/$subject/mri/orig.mgz
+  t1="$sd/$subject/mri/orig.mgz"
+  if [[ "${#warn_base[@]}" -gt 0 ]] ; then
+    echo "ERROR: Specifying '${warn_base[*]}' is not supported for base (template) creation."
+    exit 1
+  fi
 fi
 
 if [[ "$long" == "1" ]]
@@ -754,7 +759,7 @@ if [[ -f "$seg_log" ]]; then log_existed="true"
 else log_existed="false"
 fi
 
-VERSION=$($python "$FASTSURFER_HOME/FastSurferCNN/version.py" "${version_args[@]}")
+VERSION=$($python "$FASTSURFER_HOME/FastSurferCNN/version.py")
 echo "Version: $VERSION" | tee -a "$seg_log"
 
 ### IF THE SCRIPT GETS TERMINATED, ADD A MESSAGE
@@ -986,7 +991,7 @@ then
   # use recon-surf to create surface models based on the FastSurferCNN segmentation.
   pushd "$reconsurfdir" > /dev/null || exit 1
   echo "cd $reconsurfdir" | tee -a "$seg_log"
-  cmd=("./recon-surf.sh" --sid "$subject" --sd "$sd" --t1 "$conformed_name"
+  cmd=("./recon-surf.sh" --sid "$subject" --sd "$sd" --t1 "$conformed_name" --mask_name "$mask_name"
        --asegdkt_segfile "$asegdkt_segfile" --threads "$threads" --py "$python"
        "${surf_flags[@]}" "${allow_root[@]}")
   echo_quoted "${cmd[@]}" | tee -a "$seg_log"

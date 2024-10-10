@@ -181,6 +181,9 @@ done
 
 ####################################### CHECKS ####################################
 
+# Warning if run as root user
+check_allow_root
+
 if [ "${#t1s[@]}" -lt 1 ]
  then
   echo "ERROR: Must supply T1 inputs (full head) via --t1s <t1w file 1> [<t1w file 2> ...]!"

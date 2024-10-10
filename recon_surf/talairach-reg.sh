@@ -55,7 +55,7 @@ else
   binpath="$FASTSURFER_HOME/recon_surf/"
 fi
 
-# Load the RunIt and the RunBatchJobs functions
+# Load the run_it function
 source "$binpath/functions.sh"
 
 # needs <sd>/<sid>/mri
@@ -66,28 +66,27 @@ mkdir -p $mdir/tmp
 pushd "$mdir" > /dev/null || ( echo "Could not change to $mdir!" | tee -a "$LF" && exit 1)
 
 # talairach.xfm: compute talairach full head (25sec)
+cmd=("talairach_avi" --i "$mdir/orig_nu.mgz" --xfm "$mdir/transforms/talairach.auto.xfm" "$atlas")
 if [[ "$atlas3T" == "true" ]]
 then
   echo "Using the 3T atlas for talairach registration."
-  atlas="--atlas 3T18yoSchwartzReactN32_as_orig"
+  cmd+=(--atlas "3T18yoSchwartzReactN32_as_orig")
 else
   echo "Using the default atlas (1.5T) for talairach registration."
-  atlas=""
 fi
 if [[ ! -f /bin/tcsh ]] ; then
   echo "ERROR: The talairach_avi script requires tcsh, but /bin/tcsh does not exist"
   exit 1
 fi
-cmd="talairach_avi --i $mdir/orig_nu.mgz --xfm $mdir/transforms/talairach.auto.xfm $atlas"
-RunIt "$cmd" $LF
+run_it "$LF" "${cmd[@]}"
 # create copy
-cmd="cp $mdir/transforms/talairach.auto.xfm $mdir/transforms/talairach.xfm"
-RunIt "$cmd" $LF
+cmd=(cp "$mdir/transforms/talairach.auto.xfm $mdir/transforms/talairach.xfm")
+run_it "$LF" "${cmd[@]}"
 # talairach.lta: convert to lta
 cmd=(lta_convert --src "$mdir/orig.mgz" --trg "$FREESURFER_HOME/average/mni305.cor.mgz"
      --inxfm "$mdir/transforms/talairach.xfm" --outlta "$mdir/transforms/talairach.xfm.lta"
      --subject fsaverage --ltavox2vox)
-RunIt "${cmd[*]}" "$LF"
+run_it "$LF" "${cmd[@]}"
 
 # FS would here create better nu.mgz using talairach transform (finds wm and maps it to approx 110)
 #NuIterations="1 --proto-iters 1000 --distance 50"  # default 3T
@@ -98,9 +97,9 @@ RunIt "${cmd[*]}" "$LF"
 # Since we do not run mri_em_register we sym-link other talairach transform files here
 pushd "$mdir/transforms" > /dev/null || ( echo "ERROR: Could not change to the transforms directory $mdir/transforms!" | tee -a "$LF" && exit 1 )
   cmd=(ln -sf "talairach.xfm.lta" "talairach_with_skull.lta")
-  RunIt "${cmd[*]}" "$LF"
+  run_it "$LF" "${cmd[@]}"
   cmd=(ln -sf "talairach.xfm.lta" "talairach.lta")
-  RunIt "${cmd[*]}" "$LF"
+  run_it "$LF" "${cmd[@]}"
 popd > /dev/null || exit 1
 
 # Add xfm to nu
@@ -109,6 +108,6 @@ if [[ -e "$mdir/nu.mgz" ]]; then src_nu_file="$mdir/nu.mgz"
 else src_nu_file="$mdir/orig_nu.mgz"
 fi
 cmd=(mri_add_xform_to_header -c "$mdir/transforms/talairach.xfm" "$src_nu_file" "$mdir/nu.mgz")
-RunIt "${cmd[*]}" "$LF"
+run_it "$LF" "${cmd[@]}"
 
 popd > /dev/null || return
