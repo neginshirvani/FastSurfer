@@ -136,7 +136,7 @@ FLAGS:
                             determines whether the surfaces are processed with
                             highres options (below 1mm) or not.
   --edits                 Enables manual edits by replacing select intermediate/
-                            result files by manedit substitues (*.manedit.<ext>).
+                            result files by manedit substitutes (*.manedit.<ext>).
   --version <info>        Print version information and exit; <info> is optional.
                             <info> may be empty, just prints the version number,
                             +git_branch also prints the current branch, and any
@@ -823,7 +823,7 @@ then
       then
         {
           echo "INFO: $asegdkt_segfile_manedit (manedit file for <asegdkt_segfile>) detected,"
-          echo "  superceeds $asegdkt_segfile <asegdkt_segfile> for creation of $aseg_segfile"
+          echo "  supersedes $asegdkt_segfile <asegdkt_segfile> for creation of $aseg_segfile"
           echo "  and $mask_name!"
         } | tee -a "$seg_log"
         asegdkt_segfile="$asegdkt_segfile_manedit"

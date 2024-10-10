@@ -557,7 +557,7 @@ fi
 mask_manedit="$(add_file_suffix "$mask" "manedit")"
 if [[ "$edits" == "true" ]] && [[ -e "$mask_manedit" ]]
 then
-  echo "INFO: mri/$mask_manedit detected, superceeds mri/$mask in recon_surf.sh."
+  echo "INFO: mri/$mask_manedit detected, supersedes mri/$mask in recon_surf.sh."
   mask="$mask_manedit"
 fi
 
