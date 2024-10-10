@@ -526,6 +526,8 @@ then
   exit
 fi
 
+source "${reconsurfdir}/functions.sh"
+
 # Warning if run as root user
 check_allow_root
 
@@ -710,7 +712,7 @@ if [[ "$long" == "1" ]] && [[ "$base" == "1" ]]
 then
   echo "ERROR: You specified both --long and --base. You need to setup and then run base template first,"
   echo "  before you can run any longitudinal time points."
-  exit 1;
+  exit 1
 fi
 
 if [[ "$base" == "1" ]]
@@ -763,7 +765,6 @@ fi
 ########################################## START ########################################################
 mkdir -p "$(dirname "$seg_log")"
 
-source "${reconsurfdir}/functions.sh"
 
 if [[ -f "$seg_log" ]]; then log_existed="true"
 else log_existed="false"

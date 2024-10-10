@@ -264,7 +264,13 @@ if [[ -f "$LF" ]]; then log_existed="true"
 else log_existed="false"
 fi
 
-VERSION=$($python "$FASTSURFER_HOME/FastSurferCNN/version.py")
+version_args=()
+if [[ -f "$FASTSURFER_HOME/BUILD.info" ]]
+then
+  version_args=(--build_cache "$FASTSURFER_HOME/BUILD.info" --prefer_cache)
+fi
+
+VERSION=$($python "$FASTSURFER_HOME/FastSurferCNN/version.py" "${version_args[@]}")
 echo "Version: $VERSION" | tee -a "$LF"
 echo "Log file for long_prepare_template" >> "$LF"
 { date 2>&1 ; echo "" ; } | tee -a "$LF"
@@ -363,7 +369,7 @@ for ((i=0;i<${#tpids[@]};++i)); do
          --brainmask_name "$mask_name" --aseg_name "$aseg_segfile" --sid "${tpids[i]}"
          --seg_log "$seg_log" --vox_size "$vox_size" --batch_size "$batch_size"
          --viewagg_device "$viewagg" --device "$device")
-  RunIt "$(echo_quoted "${cmd[@]}")" "$LF"
+  run_it "$LF" "${cmd[@]}"
 
   # remove mri subdirectory (run_prediction creates 001 there)
   cmd="rm -rf $mdir/mri"

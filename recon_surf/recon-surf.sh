@@ -590,32 +590,7 @@ fi
 
 # ============================= TALAIRACH ==============================================
 
-if [ "$long" == "1" ] ; then
-  #TODO: move this processing into talairach-reg.sh for consistency.
-
-  # copy all talairach transforms from base (as we are in same space)
-  # this also fixes eTIV across time (if FreeSurfer scaling method is used)
-  cmd="cp $basedir/mri/transforms/talairach.lta $mdir/transforms/talairach.lta"
-  RunIt "$cmd" $LF
-  cmd="cp $basedir/mri/transforms/talairach.auto.xfm $mdir/transforms/talairach.auto.xfm"
-  RunIt "$cmd" $LF
-  cmd="cp $mdir/transforms/talairach.auto.xfm $mdir/transforms/talairach.xfm"
-  RunIt "$cmd" $LF
-  cmd="cp $basedir/mri/transforms/talairach.xfm.lta $mdir/transforms/talairach.xfm.lta"
-  RunIt "$cmd" $LF
-  cmd="cp $basedir/mri/transforms/talairach_with_skull.lta $mdir/transforms/talairach_with_skull.lta"
-  RunIt "$cmd" $LF
-
-  # Add xfm to nu header
-  # (use orig_nu, if nu.mgz does not exist already); by default, it should exist
-  if [[ -e "$mdir/nu.mgz" ]] ; then src_nu_file="$mdir/nu.mgz"
-  else src_nu_file="$mdir/orig_nu.mgz"
-  fi
-  cmd="mri_add_xform_to_header -c $mdir/transforms/talairach.xfm $src_nu_file $mdir/nu.mgz"
-  RunIt "$cmd" $LF
-
-# regular processing (cross and base)
-elif [[ ! -f "$mdir/transforms/talairach.lta" ]] || [[ ! -f "$mdir/transforms/talairach_with_skull.lta" ]] ; then
+if [[ ! -f "$mdir/transforms/talairach.lta" ]] || [[ ! -f "$mdir/transforms/talairach_with_skull.lta" ]] ; then
   # if talairach registration is missing, compute it here
   # this also creates talairach.auto.xfm and talairach.xfm and talairach.xfm.lta
   # all transforms (also ltas) are the same
@@ -642,6 +617,7 @@ fi
   echo " "
 } | tee -a $LF
 
+# the difference between nu and orig_nu is the fact that nu has the talairach-registration header
 # create norm by masking nu (supports manedit-ed mask)
 cmda=(mri_mask "$mdir/nu.mgz" "$mask" "$mdir/norm.mgz")
 run_it "$LF" "${cmda[@]}"
