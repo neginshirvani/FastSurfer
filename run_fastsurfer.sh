@@ -721,7 +721,7 @@ then
     echo "  the base (template) has been created with long_prepare_template.sh."
     exit 1
   fi
-  if [[ -z "$t1" ]] ; then
+  if [[ -n "$t1" ]] && [[ "$t1" != "from-base" ]]; then
     echo "WARNING: --t1 was passed but will be overwritten with T1 from base template."
   fi
   # base can only be run with the template image from base-setup:
@@ -745,7 +745,7 @@ then
     echo "  was included during creation of the base (template)."
     exit 1
   fi
-  if [[ -z "$t1" ]] ; then
+  if [[ -n "$t1" ]] && [[ "$t1" != "from-base" ]] ; then
     echo "WARNING: --t1 was passed but will be overwritten with T1 in base space."
   fi
   # this is the default longitudinal input from base directory:

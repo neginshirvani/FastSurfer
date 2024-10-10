@@ -346,7 +346,6 @@ subjectids=()
 ROOT_IFS=$IFS
 IFS=$'\n'
 
-echo "${subjects[@]}"
 # i is a 1-to-n index of the subject
 i=$subject_start
 for subject in "${subjects[@]:$subject_start:$subject_len}"
