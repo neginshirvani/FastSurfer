@@ -36,7 +36,7 @@ function checkdir()
 
 function checkfile()
 {
-  if [[ ! -f "$1" ]] ; then
+  if [[ ! -e "$1" ]] ; then
     echo "ERROR: Argument ($key) must be a file, expected usage:"
     usage
     return 0
@@ -52,7 +52,7 @@ atlas3T="false"
 LF="$1"
 shift
 export key=1
-checkfile "$LF" || exit 1
+if checkfile "$LF" ; then exit 1 ; fi
 
 while [[ $# -gt 0 ]]
 do
@@ -61,10 +61,10 @@ key=$(echo "$1" | tr '[:upper:]' '[:lower:]')
 shift # past argument
 
 case $key in
-  --dir) checkdir "$1" || exit 1 ; mdir="$1" ; shift ;;
-  --conformed_name) checkfile "$1" || exit 1 ; conformed_name="$1" ; shift ;;
-  --norm_name) checkfile "$1" || exit 1 ; norm_name="$1" ; shift ;;
-  --long) checkdir "$1" || exit 1 ; long="true" ; basedir="$1" ; shift ;;
+  --dir) if checkdir "$1" ; then exit 1 ; fi ; mdir="$1" ; shift ;;
+  --conformed_name) if checkfile "$1" ; then exit 1 ; fi ; conformed_name="$1" ; shift ;;
+  --norm_name) if checkfile "$1" ; then exit 1 ; fi ; norm_name="$1" ; shift ;;
+  --long) if checkdir "$1" ; then exit 1 ; fi ; long="true" ; basedir="$1" ; shift ;;
   --edits) edits="true" ;;
   --3t) atlas3T="true" ;;
   *) echo "ERROR: Unrecognized argument $key!" ; usage ; exit 1 ;;
