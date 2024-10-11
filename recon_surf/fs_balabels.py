@@ -179,11 +179,36 @@ if __name__ == "__main__":
     if options.fsaverage is None:
         options.fsaverage = os.path.join(fshome, "subjects", "fsaverage")
 
+    # check build-stamp.txt file for version
+    buildstamp = os.path.join(fshome, "build-stamp.txt")
+    if os.path.exists(buildstamp):
+        with open(buildstamp, "r") as f:
+            buildstamp_text = f.read().strip()
+            fsversion = buildstamp_text.split('-')[3]
+            print(f"FreeSurfer version: {fsversion}")
+    else:
+        sys.exit(f"ERROR: {buildstamp} not found.")
+
+    # a function to parse fsversion with . as separator (in case like 7.4.1)
+    def parse_version(version_str):
+        try:
+            version_parts = version_str.split(".")
+            return tuple(map(int, version_parts))
+        except ValueError:
+            return version_str
+    parsed_version = parse_version(fsversion)
     # read and stack colortable labels
     ba = os.path.join(fshome, "average", "colortable_BA.txt")
     vpnl = os.path.join(fshome, "average", "colortable_vpnl.txt")
     colnames = [ba, ba, vpnl]
-    colappend = ["", ".thresh", ".mpm.vpnl"]
+    # freesurfer format change in versions 7.5 and later
+    # Check following : https://github.com/freesurfer/freesurfer/commit/59a63453ac3d8c400b49c730218bd9f3bf7bb501
+    if fsversion == "dev" or (isinstance(parsed_version, tuple) and parsed_version >= (7, 5)):
+        colappend = ["", ".thresh", ""]
+        print("VERSION 7.5 or later detected++++++++++++++++++++++++++++++")
+    else:
+        colappend = ["", ".thresh", ".mpm.vpnl"]
+        print("VERSION 7.4 or earlier detected++++++++++++++++++++++++++++++")
     annotnames = ["BA_exvivo", "BA_exvivo.thresh", "mpm.vpnl"]
     label_ids, label_names, label_cols = read_colortables(colnames, colappend)
 
