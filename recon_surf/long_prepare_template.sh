@@ -300,8 +300,8 @@ do
   # check if geometry differs across time
   if [ "$s" != "${t1s[0]}" ]
   then
-    cmd="mri_diff --notallow-pix --notallow-geo $s ${t1s[0]}"
-    RunIt "$cmd" $LF
+    cmd=(mri_diff --notallow-pix --notallow-geo "$s" "${t1s[0]}")
+    run_it "$LF" "${cmd[@]}"
     if [ "${PIPESTATUS[0]}" -ne 0 ]
     then
       geodiff=1
@@ -346,8 +346,8 @@ for ((i=0;i<${#tpids[@]};++i)); do
   mkdir -p $mdir
   # Import (copy) raw inputs (convert to extension format)
   t1input=$mdir/cross_input${extension}
-  cmd="mri_convert ${t1s[i]} $t1input"
-  RunIt "$cmd" $LF
+  cmd=(mri_convert "${t1s[i]}" "$t1input")
+  run_it "$LF" "${cmd[@]}"
   
   # conform !!!!!!! should we conform to some common value, determined from all time points?? !!!!!!
   # this is relevant if input resolutions differe (which they should not), currently conform min may not work as expected
@@ -407,6 +407,8 @@ do
   echo $s
   echo "${s}" >> ${BaseSubjsListFname}
   mdir="$SUBJECTS_DIR/$tid/long-inputs/${s}"
+  # mdir="$SUBJECTS_DIR/$tid/${s}"
+
   invol="$mdir/cross_conform${extension}"
   subjInVols+=($invol)
   normvol="$mdir/cross_brainmask${extension}"
@@ -423,14 +425,14 @@ then
   # subjects in the longitudinal stream
 
   # 1. make the norm upright (base space)
-  cmd="make_upright ${normInVols[0]} \
-       ${SUBJECTS_DIR}/$tid/mri/base_brainmask${extension} ${ltaXforms[0]}"
-  RunIt "$cmd" "$LF"
+  cmd=(make_upright "${normInVols[0]}" \
+       "${SUBJECTS_DIR}/$tid/mri/base_brainmask${extension}" "${ltaXforms[0]}")
+  run_it "$LF" "${cmd[@]}"
 
   # 2. create the upright orig volume
-  cmd="mri_convert -rt cubic \
-       -at ${ltaXforms[0]} ${subjInVols[0]} ${SUBJECTS_DIR}/$tid/mri/orig.mgz"
-  RunIt "$cmd" "$LF"
+  cmd=(mri_convert -rt cubic \
+       -at "${ltaXforms[0]} ${subjInVols[0]}" "${SUBJECTS_DIR}/$tid/mri/orig.mgz")
+  run_it "$LF" "${cmd[@]}"
 
 else #more than 1 time point:
 
@@ -471,6 +473,7 @@ done
 for ((i=0;i<${#tpids[@]};++i))
 do
   mdir="$SUBJECTS_DIR/$tid/long-inputs/${tpids[i]}"
+
   # map orig to base space
   cmd="mri_convert -at ${ltaXforms[$i]} -rt $interpol $mdir/cross_input${extension} $mdir/long_conform${extension}"
   RunIt "$cmd" "$LF"

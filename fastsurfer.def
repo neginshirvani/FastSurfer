@@ -1,0 +1,55 @@
+Bootstrap: docker
+From: python:3.10.14
+
+%environment
+    export PYTHONUNBUFFERED=1
+    export PYTHONPATH="${PYTHONPATH}:/app/fastsurfer:/venv/lib/python3.10/site-packages"
+    export FREESURFER_HOME=/groups/ag-reuter/projects/fastsurfer-longitudinal-tests/example-data/freesurfer/freesurfer/
+    . $FREESURFER_HOME/SetUpFreeSurfer.sh
+    export SUBJECTS_DIR=/output
+
+
+%files 
+    /home/shirvanin/FastSurfer-Long/FastSurfer /app/fastsurfer
+
+
+%post
+    apt-get update && apt-get install -y \
+        python3-dev \
+        python3-pip \
+        tcsh
+
+    python3 -m venv /venv
+    . /venv/bin/activate
+
+    echo "activate!!!!!!!!!!!!!!"
+
+    pip3 install --upgrade pip
+    pip3 install nibabel==5.2.1
+
+    cd /app/fastsurfer
+    echo "IT CONTAINS------------------------"
+    ls -l 
+    echo "END --------------------------------"
+
+    pip3 install -r requirements.txt
+
+    chmod +x /app/fastsurfer/*.sh
+
+%runscript
+    . /venv/bin/activate
+
+    echo "Python version: $(python3 --version)"
+    echo "PYTHONPATH: $PYTHONPATH"
+
+    . $FREESURFER_HOME/SetUpFreeSurfer.sh
+    export FASTSURFER_HOME=/app/fastsurfer
+
+    export SUBJECTS_DIR=/output
+    cd $FASTSURFER_HOME
+    
+
+    python3 -c "import nibabel" || echo "nibabel not installed in venv"
+
+    exec /bin/bash
+

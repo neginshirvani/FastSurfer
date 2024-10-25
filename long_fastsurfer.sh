@@ -216,11 +216,11 @@ if [ "${#tpids[@]}" -ne "${#t1s[@]}" ]
 fi
 
 # check that SUBJECTS_DIR exists
-if [[ -z "${sd}" ]]
+if [[ -z "$SUBJECTS_DIR" ]]
 then
   echo "ERROR: No subject directory defined via --sd. This is required!"
   exit 1
-elif [[ ! -d "${sd}" ]]
+elif [[ ! -d "$SUBJECTS_DIR" ]]
 then
   echo "INFO: The subject directory did not exist, creating it now."
   if ! mkdir -p "$sd" ; then echo "ERROR: directory creation failed" ; exit 1; fi

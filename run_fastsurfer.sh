@@ -713,13 +713,13 @@ fi
 
 if [[ "$long" == "1" ]]
 then
-  if [ ! -f "$sd/$baseid/base-tps.fastsurfer" ] ; then
+  if [ ! -f "$SUBJECTS_DIR/$baseid/base-tps.fastsurfer" ] ; then
     echo "ERROR: $baseid is either not found in \$SUBJECTS_DIR or it is not a longitudinal template"
     echo "  directory (base), which needs to contain base-tps.fastsurfer file. Please ensure that"
     echo "  the base (template) has been created with long_prepare_template.sh."
     exit 1
   fi
-  if ! grep -Fxq "$subject" "$sd/$baseid/base-tps.fastsurfer" ; then
+  if ! grep -Fxq "$subject" "$SUBJECTS_DIR/$baseid/base-tps.fastsurfer" ; then
     echo "ERROR: $subject id not found in base-tps.fastsurfer. Please ensure that this time point"
     echo "  was included during creation of the base (template)."
     exit 1
@@ -728,7 +728,8 @@ then
     echo "WARNING: --t1 was passed but will be overwritten with T1 in base space."
   fi
   # this is the default longitudinal input from base directory:
-  t1="$sd/$baseid/long-inputs/$subject/long_conform.nii.gz"
+  t1="$SUBJECTS_DIR/$baseid/long-inputs/$subject/long_conform.nii.gz"
+  # t1="$sd/$baseid/$subject/long_conform.nii.gz"
 fi
 
 if [[ "$run_seg_pipeline" == "1" ]] && { [[ -z "$t1" ]] || [[ ! -f "$t1" ]]; }
