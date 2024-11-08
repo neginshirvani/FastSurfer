@@ -43,7 +43,7 @@ subject_list_awk_code_sid="\$1"
 subject_list_awk_code_args="\$2"
 subject_list_delim="="
 jobarray=""
-timelimit_seg=5
+timelimit_seg=10 
 # 1mm can take 1h per hemi plus 1h extra on a single core (depending on cpu speed)
 timelimit_surf=$((4 * 60))
 
@@ -418,13 +418,13 @@ check_fs_license "$fs_license"
 check_seg_surf_only "$seg_only" "$surf_only"
 check_out_dir "$out_dir"
 
-if [[ "$cpu_only" == "true" ]] && [[ "$timelimit_seg" -lt 6 ]]
+if [[ "$cpu_only" == "true" ]] && [[ "$timelimit_seg" -lt 11 ]]
 then
   log "WARNING!!!"
   log "------------------------------------------------------------------------"
   log "You specified the segmentation shall be performed on the cpu, but the"
-  log "time limit per segmentation is less than 6 minutes (default is optimized "
-  log "for GPU acceleration @ 5 minutes). This is very likely insufficient!"
+  log "time limit per segmentation is less than 11 minutes (default is optimized "
+  log "for GPU acceleration @ 10 minutes). This is very likely insufficient!"
   log "------------------------------------------------------------------------"
 fi
 

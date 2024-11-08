@@ -249,6 +249,10 @@ cmda=("$reconsurfdir/long_prepare_template.sh"
 run_it "$LF" "${cmda[@]}"
 
 # TODO: make sure the script stops if cmda fails
+if [[ $? -ne 0 ]]; then
+  echo "ERROR: Base setup failed for $tid"
+  exit 1
+fi
 
 ################################### Run Base Seg ##################################
 
@@ -260,6 +264,10 @@ cmda=("$FASTSURFER_HOME/run_fastsurfer.sh"
 run_it "$LF" "${cmda[@]}"
 
 # TODO: make sure the script stops if cmda fails
+if [[ $? -ne 0 ]]; then
+  echo "ERROR: Base segmentation failed for $tid"
+  exit 1
+fi
 
 
 ################################### Run Base Surf #################################
@@ -283,6 +291,11 @@ if [[ "$parallel" == "1" ]] ; then
   trap "if [[ -n \"\$(ps --no-headers $base_surf_pid)\" ]] ; then kill $base_surf_pid ; fi" EXIT
 else
   run_it "$LF" "${cmda[@]}"
+
+  if [[ $? -ne 0 ]]; then
+    echo "ERROR: Base surface creation failed for $tid"
+    exit 1
+  fi
 fi
 
 # TODO: make sure the script stops if cmda fails
@@ -315,6 +328,11 @@ if [[ "$parallel" == "1" ]] ; then
   trap "if [[ -n \"\$(ps --no-headers $long_seg_pid)\" ]] ; then kill $long_seg_pid ; fi" EXIT
 else
   run_it "$LF" "${cmda[@]}"
+
+  if [[ $? -ne 0 ]]; then
+    echo "ERROR: Longitudinal segmentation failed for $tid"
+    exit 1
+  fi
 fi
 
 # TODO: make sure the script stops if cmda fails
