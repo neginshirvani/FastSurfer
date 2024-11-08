@@ -109,7 +109,8 @@ i=0
 while [[ $# -gt 0 ]]
 do
 # make key lowercase
-key=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+arg=$1
+key=$(echo "$arg" | tr '[:upper:]' '[:lower:]')
 shift # past argument
 
 case $key in
@@ -170,7 +171,7 @@ case $key in
     exit 1
     ;;
   *)    # unknown option/run_fastsurfer.sh option
-    POSITIONAL_FASTSURFER[$i]="$key"
+    POSITIONAL_FASTSURFER[$i]="$arg"
     i=$(($i + 1))
     ;;
 esac
